@@ -4,28 +4,14 @@ symforce.set_backend("sympy")
 symforce.set_log_level("warning")
 
 from symforce import codegen
-from symforce.codegen import codegen_util
 from symforce import geo
-from symforce import ops
 from symforce import sympy as sp
-from symforce import typing as Type
 from symforce.values import Values
-from symforce.notebook_util import display, display_code, display_code_file
 
 
 # Define symbols
 L = geo.V6.symbolic("L").T  # Link Lengths
 m = geo.V4.symbolic("m").T  # Link Masses
-# l0 = sp.Symbol('l0')
-# l1 = sp.Symbol('l1')
-# l2 = sp.Symbol('l2')
-# l3 = sp.Symbol('l3')
-# l4 = sp.Symbol('l4')
-# l5 = sp.Symbol('l5')
-# m0 = sp.Symbol('m0')
-# m1 = sp.Symbol('m1')
-# m2 = sp.Symbol('m2')
-# m3 = sp.Symbol('m3')
 l_c0 = geo.V3.symbolic("l_c0").T  # center of mass locations
 l_c1 = geo.V3.symbolic("l_c1").T
 l_c2 = geo.V3.symbolic("l_c2").T
@@ -46,36 +32,24 @@ q2dd = sp.Symbol('q2dd')
 q3dd = sp.Symbol('q3dd')
 g = geo.V3.symbolic("g")  # Gravity
 
+q = geo.V4.symbolic("q")
+qd = geo.V4.symbolic("qd")
 inputs = Values()
-
-inputs["q0"] = q0
-inputs["q1"] = q1
-inputs["q2"] = q2
-inputs["q3"] = q3
-inputs["q0d"] = q0d
-inputs["q1d"] = q1d
-inputs["q2d"] = q2d
-inputs["q3d"] = q3d
+inputs["q"] = q
+inputs["qd"] = qd
+inputs["g"] = g
 
 with inputs.scope("constants"):
     inputs["m"] = m
     inputs["L"] = L
-    # inputs["m0"] = m0
-    # inputs["m1"] = m1
-    # inputs["m2"] = m2
-    # inputs["m3"] = m3
-    # inputs["l0"] = l0
-    # inputs["l1"] = l1
-    # inputs["l2"] = l2
-    # inputs["l3"] = l3
     inputs["l_c0"] = l_c0
     inputs["l_c1"] = l_c1
     inputs["l_c2"] = l_c2
     inputs["l_c3"] = l_c3
     inputs["I"] = I
 
-with inputs.scope("params"):
-    inputs["g"] = g
+# with inputs.scope("params"):
+#     inputs["g"] = g
 
 # --- Forward Kinematics --- #
 l0 = L[0]
@@ -122,7 +96,7 @@ U1 = m1 * (g.T * r1)
 U2 = m2 * (g.T * r2)
 U3 = m3 * (g.T * r3)
 
-U = U0 + U1 + U2 + U3  # + Uk
+U = (U0 + U1 + U2 + U3)[0, 0]  # + Uk
 
 # Kinetic energy
 x0d = sp.diff(x0, t)
@@ -210,6 +184,50 @@ C = C.subs(q2dd, 0)
 C = C.subs(q3dd, 0)
 C = C - G
 
+
+
+# ------------- #
+M = M.subs(q0, q[0])
+M = M.subs(q1, q[1])
+M = M.subs(q2, q[2])
+M = M.subs(q3, q[3])
+M = M.subs(q0d, qd[0])
+M = M.subs(q1d, qd[1])
+M = M.subs(q2d, qd[2])
+M = M.subs(q3d, qd[3])
+
+G = G.subs(q0, q[0])
+G = G.subs(q1, q[1])
+G = G.subs(q2, q[2])
+G = G.subs(q3, q[3])
+
+C = C.subs(q0, q[0])
+C = C.subs(q1, q[1])
+C = C.subs(q2, q[2])
+C = C.subs(q3, q[3])
+C = C.subs(q0d, qd[0])
+C = C.subs(q1d, qd[1])
+C = C.subs(q2d, qd[2])
+C = C.subs(q3d, qd[3])
+
+outputs_DEL = Values(M=geo.M(M), C=geo.M(C), G=geo.M(G))
+
+gen_DEL = codegen.Codegen(
+    inputs=inputs,
+    outputs=outputs_DEL,
+    config=codegen.CppConfig(),
+    name="DEL",
+    # return_key="DEL",
+)
+lagrange_data = gen_DEL.generate_function()
+
+# Print what we generated
+print("Files generated in {}:\n".format(lagrange_data.output_dir))
+for f in lagrange_data.generated_files:
+    print("  |- {}".format(os.path.relpath(f, lagrange_data.output_dir)))
+
+# ------------- #
+
 # --- actuator forward kinematics --- #
 d_0 = 0
 x0a = l0 * sp.cos(q0)
@@ -225,7 +243,26 @@ xa = l2 * sp.cos(q2) + (l3 + l4) * sp.cos(alpha) - d_0 + l5 * sp.cos(alpha - sp.
 ya = 0
 za = l2 * sp.sin(q2) + (l3 + l4) * sp.sin(alpha) + l5 * sp.cos(alpha - sp.pi / 2)
 fwd_kin = sp.Matrix([xa, ya, za])
+fwd_kin_0 = fwd_kin.subs(q0, q[0])
+fwd_kin_0 = fwd_kin_0.subs(q2, q[2])
 
+# ------------- #
+outputs_fwd_kin = Values(fwd=geo.M(fwd_kin_0))
+gen_FwdKin = codegen.Codegen(
+    inputs=inputs,
+    outputs=outputs_fwd_kin,
+    config=codegen.CppConfig(),
+    name="ForwardKin",
+    # return_key="ForwardKin",
+)
+FwdKin_data = gen_FwdKin.generate_function()
+
+# Print what we generated
+print("Files generated in {}:\n".format(FwdKin_data.output_dir))
+for f in FwdKin_data.generated_files:
+    print("  |- {}".format(os.path.relpath(f, FwdKin_data.output_dir)))
+
+# ------------- #
 # compute end effector actuator jacobian
 Ja = fwd_kin.jacobian([q0, q2])
 
@@ -234,31 +271,18 @@ qa_dot = sp.Matrix([q0d, q2d])
 Ja_dqdot = Ja.multiply(qa_dot)
 da = Ja_dqdot.jacobian([q0, q2]) * qa_dot
 
-# ------------- #
-outputs_DEL = Values(M=M, C=C, G=G)
+Ja_0 = Ja.subs(q0, q[0])
+Ja_0 = Ja_0.subs(q2, q[2])
+Ja_0 = Ja_0.subs(q0d, qd[0])
+Ja_0 = Ja_0.subs(q2d, qd[2])
 
-gen_DEL = codegen.Codegen(
-    inputs=inputs,
-    outputs=outputs_DEL,
-    config=codegen.CppConfig(),
-    name="DEL",
-    return_key="DEL",
-)
-lagrange_data = gen_DEL.generate_function()
-
-# Print what we generated
-print("Files generated in {}:\n".format(lagrange_data.output_dir))
-for f in lagrange_data.generated_files:
-    print("  |- {}".format(os.path.relpath(f, lagrange_data.output_dir)))
-
-# ------------- #
-outputs_Jac = Values(Ja=Ja)
+outputs_Jac = Values(Ja=geo.M(Ja_0))
 gen_Jac = codegen.Codegen(
     inputs=inputs,
     outputs=outputs_Jac,
     config=codegen.CppConfig(),
     name="Jac",
-    return_key="Jac",
+    # return_key="Jac",
 )
 Jac_data = gen_Jac.generate_function()
 
@@ -267,18 +291,4 @@ print("Files generated in {}:\n".format(Jac_data.output_dir))
 for f in Jac_data.generated_files:
     print("  |- {}".format(os.path.relpath(f, Jac_data.output_dir)))
 
-# ------------- #
-outputs_fwd_kin = Values(fwd=fwd_kin)
-gen_FwdKin = codegen.Codegen(
-    inputs=inputs,
-    outputs=outputs_fwd_kin,
-    config=codegen.CppConfig(),
-    name="ForwardKin",
-    return_key="ForwardKin",
-)
-FwdKin_data = gen_FwdKin.generate_function()
 
-# Print what we generated
-print("Files generated in {}:\n".format(FwdKin_data.output_dir))
-for f in FwdKin_data.generated_files:
-    print("  |- {}".format(os.path.relpath(f, FwdKin_data.output_dir)))
