@@ -39,14 +39,14 @@ inputs["q"] = q
 inputs["qd"] = qd
 inputs["g"] = g
 
-with inputs.scope("constants"):
-    inputs["m"] = m
-    inputs["L"] = L
-    inputs["l_c0"] = l_c0
-    inputs["l_c1"] = l_c1
-    inputs["l_c2"] = l_c2
-    inputs["l_c3"] = l_c3
-    inputs["I"] = I
+# with inputs.scope("constants"):  # TODO: Figure out how tf this works
+inputs["m"] = m
+inputs["L"] = L
+inputs["l_c0"] = l_c0
+inputs["l_c1"] = l_c1
+inputs["l_c2"] = l_c2
+inputs["l_c3"] = l_c3
+inputs["I"] = I
 
 # with inputs.scope("params"):
 #     inputs["g"] = g
@@ -184,8 +184,6 @@ C = C.subs(q2dd, 0)
 C = C.subs(q3dd, 0)
 C = C - G
 
-
-
 # ------------- #
 M = M.subs(q0, q[0])
 M = M.subs(q1, q[1])
@@ -225,70 +223,5 @@ lagrange_data = gen_DEL.generate_function()
 print("Files generated in {}:\n".format(lagrange_data.output_dir))
 for f in lagrange_data.generated_files:
     print("  |- {}".format(os.path.relpath(f, lagrange_data.output_dir)))
-
-# ------------- #
-
-# --- actuator forward kinematics --- #
-d_0 = 0
-x0a = l0 * sp.cos(q0)
-z0a = l0 * sp.sin(q0)
-rho = sp.sqrt((x0a + d_0) ** 2 + z0a ** 2)
-x1a = l2 * sp.cos(q2)
-z1a = l2 * sp.sin(q2)
-h = sp.sqrt((x0a - x1a) ** 2 + (z0a - z1a) ** 2)
-mu = sp.acos((l3 ** 2 + h ** 2 - l1 ** 2) / (2 * l3 * h))
-eta = sp.acos((h ** 2 + l2 ** 2 - rho ** 2) / (2 * h * l2))
-alpha = sp.pi - (eta + mu) + q2
-xa = l2 * sp.cos(q2) + (l3 + l4) * sp.cos(alpha) - d_0 + l5 * sp.cos(alpha - sp.pi / 2)
-ya = 0
-za = l2 * sp.sin(q2) + (l3 + l4) * sp.sin(alpha) + l5 * sp.cos(alpha - sp.pi / 2)
-fwd_kin = sp.Matrix([xa, ya, za])
-fwd_kin_0 = fwd_kin.subs(q0, q[0])
-fwd_kin_0 = fwd_kin_0.subs(q2, q[2])
-
-# ------------- #
-outputs_fwd_kin = Values(fwd=geo.M(fwd_kin_0))
-gen_FwdKin = codegen.Codegen(
-    inputs=inputs,
-    outputs=outputs_fwd_kin,
-    config=codegen.CppConfig(),
-    name="ForwardKin",
-    # return_key="ForwardKin",
-)
-FwdKin_data = gen_FwdKin.generate_function()
-
-# Print what we generated
-print("Files generated in {}:\n".format(FwdKin_data.output_dir))
-for f in FwdKin_data.generated_files:
-    print("  |- {}".format(os.path.relpath(f, FwdKin_data.output_dir)))
-
-# ------------- #
-# compute end effector actuator jacobian
-Ja = fwd_kin.jacobian([q0, q2])
-
-# compute del/delq(Ja(q)q_dot)q_dot of ee actuator jacobian
-qa_dot = sp.Matrix([q0d, q2d])
-Ja_dqdot = Ja.multiply(qa_dot)
-da = Ja_dqdot.jacobian([q0, q2]) * qa_dot
-
-Ja_0 = Ja.subs(q0, q[0])
-Ja_0 = Ja_0.subs(q2, q[2])
-Ja_0 = Ja_0.subs(q0d, qd[0])
-Ja_0 = Ja_0.subs(q2d, qd[2])
-
-outputs_Jac = Values(Ja=geo.M(Ja_0))
-gen_Jac = codegen.Codegen(
-    inputs=inputs,
-    outputs=outputs_Jac,
-    config=codegen.CppConfig(),
-    name="Jac",
-    # return_key="Jac",
-)
-Jac_data = gen_Jac.generate_function()
-
-# Print what we generated
-print("Files generated in {}:\n".format(Jac_data.output_dir))
-for f in Jac_data.generated_files:
-    print("  |- {}".format(os.path.relpath(f, Jac_data.output_dir)))
 
 
